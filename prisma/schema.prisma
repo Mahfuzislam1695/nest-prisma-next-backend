@@ -1,0 +1,764 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER      @map("user")
+  ADMIN     @map("admin")
+  MODERATOR @map("moderator")
+  EDITOR    @map("editor")
+  OTHER     @map("other")
+}
+
+enum UserStatus {
+  ACTIVE         @map("active")
+  PENDING        @map("pending")
+  VERIFIED       @map("verified")
+  SUSPENDED      @map("suspended")
+  INACTIVE       @map("inactive")
+  DELETED        @map("deleted")
+  BLOCKED        @map("blocked")
+  BANNED         @map("banned")
+  VERIFIED_EMAIL @map("verified_email")
+  VERIFIED_PHONE @map("verified_phone")
+  OTHER          @map("other")
+}
+
+model User {
+  // IDs
+  id      Int    @id @default(autoincrement())
+  humanId String @unique @default("URS-${id}-1")
+  uuid    String @unique @default(uuid())
+
+  // Authentication
+  email            String  @unique @db.VarChar(255)
+  password         String  @db.VarChar(255)
+  salt             String  @db.VarChar(255)
+  isVerified       Boolean @default(false)
+  twoFactorEnabled Boolean @default(false)
+
+  // Profile
+  profile    Profile?
+  name       String?   @db.VarChar(100)
+  avatar     String?   @db.VarChar(255)
+  coverPhoto String?   @db.VarChar(255)
+  bio        String?   @db.Text
+  website    String?   @db.VarChar(255)
+  location   String?   @db.VarChar(100)
+  birthDate  DateTime?
+
+  // Status & Roles
+  role     UserRole   @default(USER)
+  status   UserStatus @default(ACTIVE)
+  isActive Boolean    @default(true)
+
+  // Security
+  verificationToken      String?   @db.VarChar(255)
+  verificationExpires    DateTime?
+  passwordResetToken     String?   @db.VarChar(255)
+  passwordResetExpires   DateTime?
+  twoFactorSecret        String?   @db.VarChar(255)
+  lastLoginAt            DateTime?
+  lastPasswordChange     DateTime? @default(now())
+  lastFailedAttempt      DateTime?
+  failedAttemptCount     Int       @default(0)
+  accountLockedUntil     DateTime?
+  passwordChangeRequired Boolean   @default(false)
+  passwordHistory        Json? // Store last N hashes
+
+  // Localization
+  preferredLanguage String @default("en") @db.VarChar(10)
+  timeZone          String @default("UTC") @db.VarChar(50)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+
+  //-- Authentication relation--
+  RefreshToken       RefreshToken[]
+  UserSession        UserSession[]
+  LoginAttempt       LoginAttempt[]
+  SecurityLog        SecurityLog[]
+  FailedLoginAttempt FailedLoginAttempt[]
+  Device             Device[]
+
+  //-- font relation--
+  UploadedFonts        Font[]                 @relation("UploadedFonts")
+  UpdatedFonts         Font[]                 @relation("UpdatedFonts")
+  deleteFonts          Font[]                 @relation("DeleteFonts")
+  FontHistory          FontHistory[]
+  CreatedFontGroups    FontGroup[]            @relation("CreatedFontGroups")
+  UpdatedFontGroups    FontGroup[]            @relation("UpdatedFontGroups")
+  DeletedFontGroups    FontGroup[]            @relation("DeletedFontGroups")
+  FontGroupHistory     FontGroupHistory[]
+  FontGroupFont        FontGroupFont[]
+  FontGroupFontHistory FontGroupFontHistory[]
+
+  //-- Messaging relation--
+  CreatedConversations    Conversation[]            @relation("CreatedConversations")
+  UpdatedConversations    Conversation[]            @relation("UpdatedConversations")
+  DeletedConversations    Conversation[]            @relation("DeletedConversations")
+  ConversationParticipant ConversationParticipant[]
+  SentMessages            Message[]                 @relation("SentMessages")
+  MessageEdits            Message[]                 @relation("MessageEdits")
+  MessageDeletions        Message[]                 @relation("MessageDeletions")
+
+  ReceivedMentions Mention[] @relation("ReceivedMentions")
+  CreatedMentions  Mention[] @relation("CreatedMentions")
+
+  Reaction             Reaction[]
+  PinnedMessage        PinnedMessage[]
+  ReadReceipt          ReadReceipt[]
+  ConversationDeletion ConversationDeletion[]
+  MessageDeletion      MessageDeletion[]
+  Mention              Mention[]
+
+  //-- Notification relation--
+  Notification           Notification[]
+  NotificationPreference NotificationPreference[]
+
+  @@index([email])
+  @@index([humanId])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Profile {
+  id          Int      @id @default(autoincrement())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      Int      @unique
+  gender      String?  @db.VarChar(20)
+  occupation  String?  @db.VarChar(100)
+  education   String?  @db.VarChar(100)
+  skills      String[]
+  languages   String[]
+  socialMedia Json? // { twitter: string, facebook: string, etc. }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("user_profiles")
+}
+
+// ====== Authentication Models ======
+model RefreshToken {
+  id         Int      @id @default(autoincrement())
+  humanId    String   @unique @default("RFT-${id}-1")
+  uuid       String   @unique @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     Int
+  token      String   @unique @db.VarChar(500)
+  deviceInfo String?  @db.VarChar(255)
+  ipAddress  String?  @db.VarChar(45)
+  userAgent  String?  @db.VarChar(500)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model UserSession {
+  id          Int       @id @default(autoincrement())
+  humanId     String    @unique @default("SES-${id}-1")
+  uuid        String    @unique @default(uuid())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  deviceId    String    @db.VarChar(255)
+  ipAddress   String    @db.VarChar(45)
+  userAgent   String    @db.VarChar(500)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  loggedOutAt DateTime?
+
+  @@index([userId])
+  @@index([deviceId])
+  @@map("user_sessions")
+}
+
+model LoginAttempt {
+  id           Int      @id @default(autoincrement())
+  humanId      String   @unique @default("LAT-${id}-1")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int
+  ipAddress    String   @db.VarChar(45)
+  userAgent    String   @db.VarChar(500)
+  deviceType   String?  @db.VarChar(50)
+  os           String?  @db.VarChar(50)
+  browser      String?  @db.VarChar(50)
+  country      String?  @db.VarChar(100)
+  region       String?  @db.VarChar(100)
+  city         String?  @db.VarChar(100)
+  latitude     Float?
+  longitude    Float?
+  isp          String?  @db.VarChar(100)
+  asn          String?  @db.VarChar(50)
+  isSuccessful Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([ipAddress])
+  @@map("login_attempts")
+}
+
+// ====== Security Models ======
+
+enum SecurityAction {
+  PASSWORD_CHANGE        @map("password_change")
+  PROFILE_UPDATE         @map("profile_update")
+  EMAIL_CHANGE           @map("email_change")
+  LOGIN                  @map("login")
+  LOGOUT                 @map("logout")
+  DEVICE_REVOKED         @map("device_revoked")
+  TWO_FACTOR_ENABLED     @map("two_factor_enabled")
+  TWO_FACTOR_DISABLED    @map("two_factor_disabled")
+  ACCOUNT_LOCKED         @map("account_locked")
+  ACCOUNT_UNLOCKED       @map("account_unlocked")
+  PASSWORD_RESET_REQUEST @map("password_reset_request")
+  VERIFICATION_SENT      @map("verification_sent")
+  SUSPICIOUS_ACTIVITY    @map("suspicious_activity")
+  OTHER                  @map("other")
+}
+
+model SecurityLog {
+  id              Int            @id @default(autoincrement())
+  humanId         String         @unique @default("SEC-${id}-1")
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
+  action          SecurityAction
+  ipAddress       String         @db.VarChar(45)
+  userAgent       String?        @db.VarChar(500)
+  deviceId        String?        @db.VarChar(255)
+  details         Json?
+  retentionPeriod Int            @default(365) // Days to keep
+  autoPurgeDate   DateTime       @default(dbgenerated("NOW() + INTERVAL '1 year'"))
+  createdAt       DateTime       @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@map("security_logs")
+}
+
+model FailedLoginAttempt {
+  id        Int      @id @default(autoincrement())
+  humanId   String   @unique @default("FLA-${id}-1")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int?
+  email     String   @db.VarChar(255)
+  ipAddress String   @db.VarChar(45)
+  userAgent String   @db.VarChar(500)
+  country   String?  @db.VarChar(100)
+  region    String?  @db.VarChar(100)
+  city      String?  @db.VarChar(100)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([ipAddress])
+  @@index([userId])
+  @@map("failed_login_attempts")
+}
+
+enum DevicePlatform {
+  IOS          @map("ios")
+  ANDROID      @map("android")
+  WEB          @map("web")
+  DESKTOP      @map("desktop")
+  WINDOWS      @map("windows")
+  MAC          @map("mac")
+  LINUX        @map("linux")
+  SMART_TV     @map("smart_tv")
+  SMART_WATCH  @map("smart_watch")
+  TABLET       @map("tablet")
+  WEARABLE     @map("wearable")
+  EMBEDDED     @map("embedded")
+  GAME_CONSOLE @map("game_console")
+  VR_HEADSET   @map("vr_headset")
+  OTHER        @map("other")
+}
+
+model Device {
+  id           Int            @id @default(autoincrement())
+  humanId      String         @unique @default("DEV-${id}-1")
+  uuid         String         @unique @default(uuid())
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int
+  token        String         @db.VarChar(500)
+  platform     DevicePlatform
+  osVersion    String?        @db.VarChar(50)
+  model        String?        @db.VarChar(100)
+  appVersion   String?        @db.VarChar(50)
+  lastActiveAt DateTime       @default(now())
+  createdAt    DateTime       @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("devices")
+}
+
+// ====== Font Models ======
+model Font {
+  id       Int     @id @default(autoincrement())
+  humanId  String  @unique @default("FNT-${id}-1")
+  uuid     String  @unique @default(uuid())
+  name     String  @unique @db.VarChar(100)
+  filename String  @unique @db.VarChar(255)
+  path     String  @db.VarChar(500)
+  size     Int
+  mimetype String  @db.VarChar(50)
+  isActive Boolean @default(true)
+  meta     Json?
+
+  uploadedBy   User? @relation("UploadedFonts", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById Int?
+  updatedBy    User? @relation("UpdatedFonts", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById  Int?
+  deletedBy    User? @relation("DeleteFonts", fields: [deletedById], references: [id], onDelete: SetNull)
+  deletedById  Int?
+
+  deletedAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  FontHistory   FontHistory[]
+  FontGroupFont FontGroupFont[]
+
+  @@index([name])
+  @@index([humanId])
+  @@index([uploadedById])
+  @@map("fonts")
+}
+
+model FontHistory {
+  id          Int      @id @default(autoincrement())
+  humanId     String   @unique @default("FNH-${id}-1")
+  font        Font     @relation(fields: [fontId], references: [id], onDelete: Cascade)
+  fontId      Int
+  action      String   @db.VarChar(50)
+  changedBy   User     @relation(fields: [changedById], references: [id], onDelete: Cascade)
+  changedById Int
+  oldData     Json?
+  newData     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([fontId])
+  @@index([changedById])
+  @@map("font_history")
+}
+
+model FontGroup {
+  id          Int     @id @default(autoincrement())
+  humanId     String  @unique @default("FGP-${id}-1")
+  uuid        String  @unique @default(uuid())
+  title       String  @db.VarChar(100)
+  description String? @db.VarChar(500)
+  isActive    Boolean @default(true)
+
+  createdBy   User? @relation("CreatedFontGroups", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById Int?
+  updatedBy   User? @relation("UpdatedFontGroups", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById Int?
+  deletedBy   User? @relation("DeletedFontGroups", fields: [deletedById], references: [id], onDelete: SetNull)
+  deletedById Int?
+
+  deletedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  FontGroupHistory FontGroupHistory[]
+  FontGroupFont    FontGroupFont[]
+
+  @@unique([title])
+  @@index([createdById])
+  @@map("font_groups")
+}
+
+model FontGroupHistory {
+  id          Int       @id @default(autoincrement())
+  humanId     String    @unique @default("FGH-${id}-1")
+  group       FontGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId     Int
+  action      String    @db.VarChar(50)
+  changedBy   User      @relation(fields: [changedById], references: [id], onDelete: Cascade)
+  changedById Int
+  oldData     Json?
+  newData     Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([groupId])
+  @@index([changedById])
+  @@map("font_group_history")
+}
+
+model FontGroupFont {
+  id                   Int                    @id @default(autoincrement())
+  humanId              String                 @unique @default("FGF-${id}-1")
+  font                 Font                   @relation(fields: [fontId], references: [id], onDelete: Cascade)
+  fontId               Int
+  group                FontGroup              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId              Int
+  addedBy              User                   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  addedById            Int
+  createdAt            DateTime               @default(now())
+  FontGroupFontHistory FontGroupFontHistory[]
+
+  @@unique([fontId, groupId])
+  @@map("font_group_fonts")
+}
+
+model FontGroupFontHistory {
+  id          Int           @id @default(autoincrement())
+  humanId     String        @unique @default("GFH-${id}-1")
+  groupFont   FontGroupFont @relation(fields: [groupFontId], references: [id], onDelete: Cascade)
+  groupFontId Int
+  action      String        @db.VarChar(50)
+  changedBy   User          @relation(fields: [changedById], references: [id], onDelete: Cascade)
+  changedById Int
+  oldData     Json?
+  newData     Json?
+  createdAt   DateTime      @default(now())
+
+  @@index([groupFontId])
+  @@index([changedById])
+  @@map("font_group_font_history")
+}
+
+// ====== Messaging Models ======
+
+model Conversation {
+  id      Int     @id @default(autoincrement())
+  humanId String  @unique @default("CON-${id}-1")
+  uuid    String  @unique @default(uuid())
+  title   String? @db.VarChar(100)
+  isGroup Boolean @default(false)
+
+  avatar      String? @db.VarChar(500)
+  description String? @db.Text
+  settings    Json? // { allowReactions: boolean, etc. }
+
+  creator     User? @relation("CreatedConversations", fields: [creatorId], references: [id], onDelete: SetNull)
+  creatorId   Int?
+  updatedBy   User? @relation("UpdatedConversations", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById Int?
+  deletedBy   User? @relation("DeletedConversations", fields: [deletedById], references: [id], onDelete: SetNull)
+  deletedById Int?
+
+  deletedAt               DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  ConversationParticipant ConversationParticipant[]
+  Mention                 Mention[]
+  PinnedMessage           PinnedMessage[]
+  ReadReceipt             ReadReceipt[]
+  ConversationDeletion    ConversationDeletion[]
+  Message                 Message[]
+  Notification            Notification[]
+
+  // @@index([latestMessageId])
+
+  @@index([creatorId])
+  @@map("conversations")
+}
+
+enum ParticipantRole {
+  MEMBER    @map("member")
+  MODERATOR @map("moderator")
+  ADMIN     @map("admin")
+  OWNER     @map("owner")
+  GUEST     @map("guest")
+  BOT       @map("bot")
+  SYSTEM    @map("system")
+  SUPPORT   @map("support")
+  MANAGER   @map("manager")
+  OTHER     @map("other")
+}
+
+model ConversationParticipant {
+  id             Int             @id @default(autoincrement())
+  humanId        String          @unique @default("COP-${id}-1")
+  uuid           String          @unique @default(uuid())
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId Int
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         Int
+  joinedAt       DateTime        @default(now())
+  leftAt         DateTime?
+  role           ParticipantRole @default(MEMBER)
+  unreadCount    Int             @default(0)
+  isMuted        Boolean         @default(false)
+  isPinned       Boolean         @default(false)
+  nickname       String?         @db.VarChar(50)
+  lastReadAt     DateTime?
+
+  @@unique([conversationId, userId])
+  @@index([conversationId, isMuted, isPinned])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id      Int    @id @default(autoincrement())
+  humanId String @unique @default("MSG-${id}-1")
+  uuid    String @unique @default(uuid())
+
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  sender        User              @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId      Int
+  content       String?           @db.Text
+  attachments   Attachment[]
+  parent        Message?          @relation("MessageReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  parentId      Int?
+  replies       Message[]         @relation("MessageReplies")
+  reactions     Reaction[]
+  mentions      Mention[]
+  isEdited      Boolean           @default(false)
+  editedBy      User?             @relation("MessageEdits", fields: [editedById], references: [id], onDelete: SetNull)
+  editedById    Int?
+  isDeleted     Boolean           @default(false)
+  deletedBy     User?             @relation("MessageDeletions", fields: [deletedById], references: [id], onDelete: SetNull)
+  deletedById   Int?
+  deletedFor    MessageDeletion[]
+  metadata      Json?
+  threadId      Int? // For thread conversations
+  isRootMessage Boolean           @default(false)
+  replyCount    Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  PinnedMessage PinnedMessage[]
+  ReadReceipt   ReadReceipt[]
+  Notification  Notification[]
+
+  @@index([threadId]) // For thread navigation
+  @@index([isDeleted, createdAt]) // For cleanup queries
+  @@index([id])
+  @@index([conversationId, createdAt])
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([parentId])
+  @@map("messages")
+}
+
+model Mention {
+  id              Int          @id @default(autoincrement())
+  humanId         String       @unique @default("MEN-${id}-1")
+  uuid            String       @unique @default(uuid())
+  message         Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId       Int
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId  Int
+  mentionedUser   User         @relation("ReceivedMentions", fields: [mentionedUserId], references: [id], onDelete: Cascade)
+  mentionedUserId Int
+  mentioner       User         @relation("CreatedMentions", fields: [mentionerId], references: [id], onDelete: Cascade)
+  mentionerId     Int
+  isRead          Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  User            User?        @relation(fields: [userId], references: [id])
+  userId          Int?
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([mentionedUserId])
+  @@index([mentionerId])
+  @@map("mentions")
+}
+
+model Attachment {
+  id           Int            @id @default(autoincrement())
+  humanId      String         @unique @default("ATT-${id}-1")
+  uuid         String         @unique @default(uuid())
+  message      Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId    Int
+  type         AttachmentType
+  url          String         @db.VarChar(500)
+  name         String?        @db.VarChar(255)
+  size         Int
+  width        Int?
+  height       Int?
+  duration     Int?
+  thumbnail    String?        @db.VarChar(500)
+  mimeType     String         @db.VarChar(100)
+  storagePath  String         @db.VarChar(500) // For cloud storage
+  checksum     String         @db.VarChar(64) // For file integrity
+  isUploaded   Boolean        @default(false)
+  uploadExpiry DateTime? // For temporary uploads
+  createdAt    DateTime       @default(now())
+
+  @@index([messageId])
+  @@map("attachments")
+}
+
+enum AttachmentType {
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  FILE
+  LOCATION
+}
+
+model Reaction {
+  id        Int      @id @default(autoincrement())
+  humanId   String   @unique @default("REA-${id}-1")
+  uuid      String   @unique @default(uuid())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  emoji     String   @db.VarChar(50)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+  @@map("reactions")
+}
+
+model PinnedMessage {
+  id             Int          @id @default(autoincrement())
+  humanId        String       @unique @default("PIN-${id}-1")
+  uuid           String       @unique @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId Int
+  message        Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId      Int
+  pinnedBy       User         @relation(fields: [pinnedById], references: [id], onDelete: Cascade)
+  pinnedById     Int
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, messageId])
+  @@index([conversationId])
+  @@map("pinned_messages")
+}
+
+model ReadReceipt {
+  id             Int          @id @default(autoincrement())
+  humanId        String       @unique @default("RCP-${id}-1")
+  uuid           String       @unique @default(uuid())
+  message        Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId      Int
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId Int
+  readAt         DateTime     @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("read_receipts")
+}
+
+model ConversationDeletion {
+  id             Int          @id @default(autoincrement())
+  humanId        String       @unique @default("CDL-${id}-1")
+  uuid           String       @unique @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId Int
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         Int
+  deletedAt      DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@map("conversation_deletions")
+}
+
+model MessageDeletion {
+  id        Int      @id @default(autoincrement())
+  humanId   String   @unique @default("MDL-${id}-1")
+  uuid      String   @unique @default(uuid())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  deletedAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@map("message_deletions")
+}
+
+// ====== Notification Models ======
+enum NotificationPriority {
+  LOW    @map("low")
+  MEDIUM @map("medium")
+  HIGH   @map("high")
+  URGENT @map("urgent")
+  OTHER  @map("other")
+}
+
+model Notification {
+  id                    Int                  @id @default(autoincrement())
+  humanId               String               @unique @default("NOT-${id}-1")
+  uuid                  String               @unique @default(uuid())
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                Int
+  type                  NotificationType
+  title                 String               @db.VarChar(100)
+  body                  String?              @db.Text
+  data                  Json?
+  isRead                Boolean              @default(false)
+  relatedUserId         Int?
+  relatedConversationId Int?
+  relatedMessageId      Int?
+  priority              NotificationPriority @default(MEDIUM)
+  expiresAt             DateTime?
+  actionUrl             String?              @db.VarChar(500)
+  createdAt             DateTime             @default(now())
+  Conversation          Conversation?        @relation(fields: [conversationId], references: [id])
+  conversationId        Int?
+  Message               Message?             @relation(fields: [messageId], references: [id])
+  messageId             Int?
+
+  @@index([expiresAt]) // For expiration cleanup
+  @@index([userId, isRead, createdAt])
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  MESSAGE        @map("message")
+  MENTION        @map("mention")
+  REACTION       @map("reaction")
+  FRIEND_REQUEST @map("friend_request")
+  SYSTEM         @map("system")
+  GROUP_INVITE   @map("group_invite")
+  MEDIA_UPLOADED @map("media_uploaded")
+  COMMENT        @map("comment")
+  LIKE           @map("like")
+  SHARE          @map("share")
+  OTHER          @map("other")
+}
+
+model NotificationPreference {
+  id               Int              @id @default(autoincrement())
+  humanId          String           @unique @default("NOP-${id}-1")
+  uuid             String           @unique @default(uuid())
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           Int
+  type             NotificationType
+  emailEnabled     Boolean          @default(true)
+  pushEnabled      Boolean          @default(true)
+  inAppEnabled     Boolean          @default(true)
+  soundEnabled     Boolean          @default(true)
+  vibrationEnabled Boolean          @default(true)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("notification_preferences")
+}
