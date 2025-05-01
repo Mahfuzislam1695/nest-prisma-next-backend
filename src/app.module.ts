@@ -12,16 +12,16 @@ import { PrismaModule } from './prisma/prisma.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
-    ServeStaticModule.forRootAsync({
-      useFactory: (config: ConfigService) => {
-        const uploadPath = config.get<string>('storage.destination', './uploads');
-        return [{
-          rootPath: join(__dirname, '..', uploadPath),
-          serveRoot: '/fonts',
-        }];
-      },
-      inject: [ConfigService],
-    }),
+    // ServeStaticModule.forRootAsync({
+    //   useFactory: (config: ConfigService) => {
+    //     const uploadPath = config.get<string>('storage.destination', './uploads');
+    //     return [{
+    //       rootPath: join(__dirname, '..', uploadPath),
+    //       serveRoot: '/fonts',
+    //     }];
+    //   },
+    //   inject: [ConfigService],
+    // }),
     PrismaModule
   ],
   controllers: [AppController],
